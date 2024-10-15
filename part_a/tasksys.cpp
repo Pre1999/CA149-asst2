@@ -1,5 +1,7 @@
 #include "tasksys.h"
-
+#include <thread>
+#include <cstdio>
+#include <mutex>
 
 IRunnable::~IRunnable() {}
 
@@ -55,6 +57,9 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    setNumThreads(num_threads);
+
+
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
@@ -67,10 +72,20 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-
+    std::thread threadpool[num_threads];
+    printf("call made to run parallel spawn\n");
     for (int i = 0; i < num_total_tasks; i++) {
+        // threadpool[i%num_threads] = std::thread(runnable->runTask, (i, num_total_tasks)); //Original
+        threadpool[i%num_threads] = std::thread([runnable, i, num_total_tasks]() {
         runnable->runTask(i, num_total_tasks);
-    }
+        });
+
+        if ((i+1) % num_threads ==0) {
+            for (int j=0; j <num_threads; j++){
+                threadpool[j].join();
+            }
+        }
+    }   
 }
 
 TaskID TaskSystemParallelSpawn::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -101,6 +116,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    setNumThreads(num_threads);
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
@@ -113,12 +129,19 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    std::thread threadpool[num_threads];
+    std::mutex task_mutex;
+    int next_task = 0;
+    
+    for (int thread=0; thread <num_threads; thread++){
+        threadpool[thread] = std::thread([this, runnable, num_total_tasks, &next_task, &task_mutex]() {
+                this->execute_task(runnable, num_total_tasks, &next_task, &task_mutex);
+            });
+        }
+    for (int finished_thread=0; finished_thread <num_threads; finished_thread++){
+            threadpool[finished_thread].join();
+        }
     }
-}
-
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                                               const std::vector<TaskID>& deps) {
     // You do not need to implement this method.
@@ -147,6 +170,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    setNumThreads(num_threads);
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {

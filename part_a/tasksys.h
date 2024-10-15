@@ -2,6 +2,8 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <thread>
+#include <mutex>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -34,6 +36,14 @@ class TaskSystemParallelSpawn: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+        int getNumThreads(){
+            return num_threads;
+        }
+        void setNumThreads(int incoming_value){
+            num_threads = incoming_value;
+        }
+    private:
+        int num_threads;
 };
 
 /*
@@ -48,9 +58,47 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         ~TaskSystemParallelThreadPoolSpinning();
         const char* name();
         void run(IRunnable* runnable, int num_total_tasks);
+        void execute_task(IRunnable* runnable, int num_total_tasks, int* next_task, std::mutex* task_mutex){
+            int my_thread_task=0;
+            bool stop=false;
+            while(!stop){
+                task_mutex->lock();
+                if (*next_task < num_total_tasks){
+                    my_thread_task=*next_task;
+                    *next_task +=1;
+                    
+                }
+                else {
+                    stop=true;
+                }
+                task_mutex->unlock();
+                if (! stop){
+                    // printf("running task %d\n", my_thread_task);
+                    runnable->runTask(my_thread_task, num_total_tasks);
+                }
+                
+            }
+        }
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+        int getNumThreads(){
+            return num_threads;
+        }
+        void setNumThreads(int incoming_value){
+            num_threads = incoming_value;
+        }
+        int countZeros(int arr[], int size) {
+            int count = 0;
+            for (int i = 0; i < size; i++) {
+                if (arr[i] == 0) {
+                    count++;
+                }
+            }
+            return count;
+        }
+    private:
+        int num_threads;
 };
 
 /*
@@ -64,10 +112,35 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
         const char* name();
+        int num_threads;
         void run(IRunnable* runnable, int num_total_tasks);
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+        void setNumThreads(int incoming_value){
+            num_threads = incoming_value;
+        }
+        void execute_task(IRunnable* runnable, int num_total_tasks, int* next_task, std::mutex* task_mutex){
+            int my_thread_task=0;
+            bool stop=false;
+            while(!stop){
+                task_mutex->lock();
+                if (*next_task < num_total_tasks){
+                    my_thread_task=*next_task;
+                    *next_task +=1;
+                    
+                }
+                else {
+                    stop=true;
+                }
+                task_mutex->unlock();
+                if (! stop){
+                    // printf("running task %d\n", my_thread_task);
+                    runnable->runTask(my_thread_task, num_total_tasks);
+                }
+                
+            }
+        }
 };
 
 #endif
