@@ -1,6 +1,5 @@
 #include "tasksys.h"
 
-
 IRunnable::~IRunnable() {}
 
 ITaskSystem::ITaskSystem(int num_threads) {}
@@ -55,9 +54,26 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    this->num_threads = num_threads;
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
+
+void TaskSystemParallelSpawn::runthreads(IRunnable* runnable, int num_total_tasks) {
+    int taskID = -1;
+    while( this->current_task < num_total_tasks) {
+
+        this->mutex_lock.lock();
+        taskID = this->current_task;
+        this->current_task += 1;
+        this->mutex_lock.unlock();
+
+        if(taskID < num_total_tasks) {
+            runnable->runTask(taskID, num_total_tasks);
+        }
+    }
+
+}
 
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
 
@@ -67,9 +83,15 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    this->current_task = 0;
+    std::thread threadpool[num_threads];
+    for (int i = 0; i < this->num_threads; i++) {
+        threadpool[i] = std::thread([this, runnable, num_total_tasks]() {
+            this->runthreads(runnable, num_total_tasks);
+        });
+    }
+    for (int i = 0; i < this->num_threads; i++) {
+        threadpool[i].join();
     }
 }
 
@@ -101,9 +123,62 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    this->num_threads = num_threads;
+    for (int i = 0; i < this->num_threads; i++) {
+        this->threadpool.emplace_back(&TaskSystemParallelThreadPoolSpinning::init_thread, this);
+    }
 }
 
-TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
+void TaskSystemParallelThreadPoolSpinning::init_thread(){
+    int last_task=-1;
+    int my_thread_task=-1;
+    while(!(this->thread_exit)){
+        // printf("in thread func: loop start: next task %d | n num total tasks %d\n", next_task, num_total_tasks_spinning);
+        
+        // my_thread_task = next_task;
+        // printf("value of cond: %d\n", my_thread_task < num_total_tasks);
+        // printf("my thread task: %d\n", my_thread_task);
+        
+        // printf("lock acquired\n");
+        this->task_increment_mutex.lock();
+        if (this->next_task < this->num_total_tasks_spinning){
+            // printf("in if statement\n");
+            my_thread_task=this->next_task;
+            this->next_task +=1;
+            // printf("running threadID #%d\n", my_thread_task);
+        }
+        this->task_increment_mutex.unlock();
+        
+        if (my_thread_task < this->num_total_tasks_spinning && my_thread_task != last_task){
+            last_task=my_thread_task;
+            // printf("running taskID #%d\n", my_thread_task);
+            this->task_queue->runTask(my_thread_task, this->num_total_tasks_spinning);
+            this->task_increment_mutex.lock();
+            this->finished_tasks += 1;
+            // printf("Finished Tasks - #%d\n", this->finished_tasks);
+            if(this->finished_tasks == this->num_total_tasks_spinning) {
+                last_task=-1;
+                my_thread_task=-1;
+            }
+            this->task_increment_mutex.unlock();
+        } 
+
+        // if ()
+        // printf("loop end: thread_exit: %d\n", thread_exit);
+    }
+    // printf("Threads Exiting \n");
+}
+
+TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+    this->task_increment_mutex.lock();
+    // printf("Here\n");
+    this->thread_exit=true;
+    this->task_increment_mutex.unlock();
+
+    for (auto& thread : this->threadpool) {
+        thread.join();
+    }
+}
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
 
@@ -113,10 +188,21 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    // printf("Calling main function\n");
+    this->task_increment_mutex.lock();
+    this->finished_tasks = 0;
+    this->task_queue = runnable;
+    this->next_task = 0;
+    this->num_total_tasks_spinning = num_total_tasks;
+    this->task_increment_mutex.unlock();
+    // printf("next task %d | num total tasks %d\n", next_task, num_total_tasks);
+    // printf("-> %d | %d \n", this->finished_tasks, num_total_tasks);
+    while(this->finished_tasks != (num_total_tasks)){
+        // printf("Here\n");
+        // printf("--> %d | %d \n", this->finished_tasks, num_total_tasks);
     }
+    // printf("--> %d | %d \n", this->finished_tasks, num_total_tasks);
+    // printf("------Here------------\n");
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
