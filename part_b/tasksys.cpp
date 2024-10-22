@@ -121,6 +121,16 @@ void TaskSystemParallelThreadPoolSpinning::sync() {
  * Parallel Thread Pool Sleeping Task System Implementation
  * ================================================================
  */
+Tasks::Tasks() {
+    finished_tasks_ = -1;
+    next_task = -1;
+    num_total_tasks_ = -1;
+    runnable_ = nullptr;
+    status_=1;
+}
+
+Tasks::~Tasks() {
+}
 
 const char* TaskSystemParallelThreadPoolSleeping::name() {
     return "Parallel + Thread Pool + Sleep";
@@ -133,6 +143,18 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    mutex_ = new std::mutex();
+    finishedMutex_ = new std::mutex();
+    finished_ = new std::condition_variable();
+    killed_ = false;
+    num_runs_started=0;
+    num_runs_finished=0;
+    num_threads_ = num_threads;
+    thread_pool_ = new std::thread[num_threads];
+    for (int i = 0; i < num_threads; i++) {
+        thread_pool_[i] = std::thread(&TaskSystemParallelThreadPoolSleeping::sleepingThread, this, i);
+    }
+
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -142,6 +164,23 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    printf("Destructor called \n");
+    mutex_->lock();
+    killed_ = true;
+    mutex_->unlock();
+
+    //wake up threads to see that killed_ is true
+    finishedMutex_->lock();
+    finishedMutex_->unlock();
+    finished_->notify_all();
+
+    for (int i = 0; i < num_threads_; i++)
+    thread_pool_[i].join();
+    printf("threads have been joined");
+    delete[] thread_pool_;
+    delete tasks;
+    delete mutex_;
+    delete finishedMutex_;
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
@@ -165,12 +204,92 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     //
     // TODO: CS149 students will implement this method in Part B.
     //
+    //increment total active runs 
+    int taskID=num_runs_started;
+    num_runs_started++;
+    
+    tasks = new Tasks();
+    mutex_->lock();
+    tasks->finished_tasks_ = 0;
+    tasks->next_task = 0;
+    tasks->num_total_tasks_ = num_total_tasks;
+    tasks->runnable_ = runnable;
+    tasks->status_ = 0;
+    tasks->deps = deps;
+    bulk_task_launches[taskID] = tasks;
+    for (auto& pair: bulk_task_launches){
+        printf("taskID %d", taskID);
+        for (auto& dep_:pair.second->deps){
+            printf(" | dep %d", dep_);
+        }
+        printf("\n");
+    }
+    mutex_->unlock();
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    //wake up threads to do work
+    printf("waking threads to do work\n");
+    finishedMutex_->lock();
+    finishedMutex_->unlock();
+    finished_->notify_all();
+
+    printf("exiting runAsyncWithDeps\n");
+    return taskID;
+}
+void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
+    int taskID;
+    int total;
+    printf("threadID %d entering\n", threadID);
+    while (!killed_)
+    {
+        for (auto& pair: bulk_task_launches){
+            finishedMutex_->lock();
+            if (pair.second->status_==1) {
+                continue;
+            }
+            finishedMutex_->unlock();
+            // printf("trying to run taskID: %d\n", pair.first);
+            //check for any dependencies on the task to exec
+            for (auto& depend_:pair.second->deps){
+                printf("checking for dependency on taskID: %d\n", depend_);
+                finishedMutex_->lock();
+                if (! bulk_task_launches[depend_]->status_ || pair.second->status_==1){ //status 0 means not ready,not finished,  1 is ready/finished
+                finishedMutex_->unlock();
+                    continue;
+                }
+            }
+            
+            
+            mutex_->lock();
+            // if (killed_) break;
+            std::unique_lock<std::mutex> lk(*(finishedMutex_));
+            finished_->wait(lk);
+
+            total = pair.second->num_total_tasks_;
+            taskID = pair.second->next_task;
+            if (taskID < total) pair.second->next_task++;
+            mutex_->unlock();
+            if (taskID < total) {
+                pair.second->runnable_->runTask(taskID, total);
+                mutex_->lock();
+                pair.second->finished_tasks_++;
+                if (pair.second->finished_tasks_ == total) {
+                    mutex_->unlock();
+
+                    finishedMutex_->lock();
+                    num_runs_finished++;
+                    printf("num runs finished: %d threadID %d\n", num_runs_finished, threadID);
+                    killed_=true;
+                    pair.second->status_=1; //set status of finished task to 1 meaning ready
+                    finishedMutex_->unlock();
+                } else {
+                    mutex_->unlock();
+                }
+            }
+        }
     }
 
-    return 0;
+    printf("threadID %d exiting\n", threadID);
+    
 }
 
 void TaskSystemParallelThreadPoolSleeping::sync() {
@@ -178,6 +297,9 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
     //
     // TODO: CS149 students will modify the implementation of this method in Part B.
     //
-
+    while(num_runs_finished < num_runs_started){
+        // printf("current runs finished: %d\n", num_runs_finished);
+    }
+    printf("Exiting sync \n");
     return;
 }
