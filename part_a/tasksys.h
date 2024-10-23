@@ -71,6 +71,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         bool killed_;
         int num_threads_;
         std::thread* thread_pool_; 
+        volatile bool done;
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);
         ~TaskSystemParallelThreadPoolSpinning();

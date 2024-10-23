@@ -4,11 +4,13 @@
 #include "itasksys.h"
 #include <thread>
 #include <mutex>
+#include <iostream>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib> 
 #include <condition_variable>
 #include <unordered_map>
+#include <system_error>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -81,14 +83,13 @@ class Tasks {
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
         Tasks* tasks;
-        bool killed_;
-        std::mutex* mutex_;
-        std::mutex* finishedMutex_;
-        std::condition_variable* finished_;
+        volatile bool killed_;
+        std::mutex lk_;
+        std::condition_variable finished_;
         int finished_tasks_;
-        int num_runs_finished;
-        int num_runs_started;
-        int num_threads_;
+        volatile int num_runs_finished;
+        volatile int num_runs_started;
+        volatile int num_threads_;
         std::thread* thread_pool_;
         std::unordered_map<int, Tasks*> bulk_task_launches;
     public:

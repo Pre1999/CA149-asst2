@@ -164,12 +164,13 @@ void TaskSystemParallelThreadPoolSpinning::spinningThread(int threadID) {
             tasks->mutex_->lock();
             tasks->finished_tasks_++;
             if (tasks->finished_tasks_ == total) {
+                done = true;
                 tasks->mutex_->unlock();
 
-                tasks->finishedMutex_->lock();
-                tasks->finishedMutex_->unlock();
+                // tasks->finishedMutex_->lock();
+                // tasks->finishedMutex_->unlock();
                 // printf("Notified - Task ID %d - TID : %d\n", taskID, threadID);
-                tasks->finished_->notify_all();
+                // tasks->finished_->notify_all();
 
             } else {
                 tasks->mutex_->unlock();
@@ -207,14 +208,16 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // printf("Call to run \n");
     std::unique_lock<std::mutex> lk(*(tasks->finishedMutex_));
     tasks->mutex_->lock();
+    done = false;
     tasks->finished_tasks_ = 0;
     tasks->next_task = 0;
     tasks->num_total_tasks_ = num_total_tasks;
     tasks->runnable_ = runnable;
     tasks->mutex_->unlock();
 
-    tasks->finished_->wait(lk);
-    lk.unlock();
+    // tasks->finished_->wait(lk);
+    while(!done);
+    // lk.unlock();
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
