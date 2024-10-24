@@ -170,7 +170,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     #ifdef DEBUG
     printf("\n\nDestructor called - %d \n", num_threads_);
     #endif
-    // printf("\n\nDestructor called - %d \n\n\n", num_threads_);
+    // printf("\n\n ================================ Destructor called - %d ================================ \n\n\n", num_threads_);
     // mutex_->lock();
     // killed_ = true;
     // mutex_->unlock();
@@ -247,6 +247,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     return taskID;
 }
 void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
+    int key;
     volatile int taskID;
     volatile int total;
     volatile bool work_not_found = true;
@@ -271,9 +272,13 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
             dependencynotMet = false;
             //check for any dependencies on the task to exec
             for (auto& depend_:pair.second->deps){
-                if (! bulk_task_launches[depend_]->status_){ //status 0 means not ready,not finished,  1 is ready/finished
-                    dependencynotMet = true;
-                    break;
+                // Use std::find to check if depend_ is in bulk_task_launches
+                auto it = bulk_task_launches.find(depend_);
+                if (it != bulk_task_launches.end()) {
+                    if (! bulk_task_launches[depend_]->status_){ //status 0 means not ready,not finished,  1 is ready/finished
+                        dependencynotMet = true;
+                        break;
+                    }
                 }
             }
 
@@ -282,6 +287,7 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
             } else {
                 work_not_found = false;
                 workfound = pair.second;
+                key = pair.first;
                 break;
             }
             work_not_found = true;
@@ -316,14 +322,16 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
                     std::exit(EXIT_FAILURE);
                 }
                 workfound->finished_tasks_++;
+                // printf("num tasks finished: %d | num runs finished: %d | threadID %d\n", workfound->finished_tasks_, num_runs_finished, threadID);
                 if (workfound->finished_tasks_ == total) {
                     num_runs_finished++;
-                    // printf("num runs finished: %d threadID %d\n", num_runs_finished, threadID);
+                    // printf("num runs finished: %d threadID %d\n\n", num_runs_finished, threadID);
                     #ifdef DEBUG
                     printf("num runs finished: %d threadID %d\n", num_runs_finished, threadID);
                     #endif
 
                     workfound->status_=1; //set status of finished task to 1 meaning ready
+                    bulk_task_launches.erase(key);
                     wakeup_signal = true;
                     workers.notify_all();
 
