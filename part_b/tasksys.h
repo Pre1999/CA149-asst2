@@ -84,8 +84,10 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
         Tasks* tasks;
         volatile bool killed_;
+        volatile bool wakeup_signal;
         std::mutex lk_;
         std::condition_variable finished_;
+        std::condition_variable workers;
         int finished_tasks_;
         volatile int num_runs_finished;
         volatile int num_runs_started;
