@@ -194,6 +194,9 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // printf("threads have been joined");
     delete[] thread_pool_;
     delete tasks;
+    // for (auto it = bulk_task_launches.begin(); it != bulk_task_launches.end(); ) {
+    //     delete it->second;
+    // }
     // delete mutex_;
     // delete finishedMutex_;
 }
@@ -241,6 +244,8 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
         feeder[dep].push_back(bulk_taskID);
         if(!bulk_task_launches[dep]->status_){
             allow_pushback = false;
+        } else {
+            bulk_task_launches[bulk_taskID]->num_deps--;
         }
     }
 
@@ -260,14 +265,14 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     //     }
     //     printf("\n");
     // }
-    printf("--- Initializing Feeder Q --- \n");
-    for (auto& pair: feeder){
-        printf("TaskID %d", pair.first);
-        for (auto& dep_: pair.second){
-            printf(" | Child %d", dep_);
-        }
-        printf("\n");
-    }
+    // printf("--- Initializing Feeder Q --- \n");
+    // for (auto& pair: feeder){
+    //     printf("TaskID %d", pair.first);
+    //     for (auto& dep_: pair.second){
+    //         printf(" | Child %d", dep_);
+    //     }
+    //     printf("\n");
+    // }
     #endif
     wakeup_signal = true;
     workers.notify_all();
@@ -275,13 +280,10 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     return bulk_taskID;
 }
 void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
-    int key;
     volatile int taskID;
     volatile int total;
     volatile bool work_not_found = true;
-    bool dependencynotMet = false;
     Tasks* workfound;
-    int loop = 0;
 
     #ifdef DEBUG
     printf("threadID %d entering\n", threadID);
@@ -290,15 +292,9 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
     while (!killed_)
     {   
         // printf("threadID %d looping for\n", threadID);
-        loop = 0;
         std::unique_lock<std::mutex> lk(lk_);
         // for (auto& pair: bulk_task_launches){
 
-        //     if(threadID == 0) {
-        //        printf("-> threadID %d | looping %d \n", threadID, loop); 
-        //     }
-        //     // printf("threadID %d looping %d \n", threadID, loop);
-        //     loop++;
         //     if (pair.second->status_==1) {
         //         continue;
         //     }
@@ -332,7 +328,7 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
             workfound = ready_task_q[0];
             work_not_found = false;
             #ifdef DEBUG
-            printf("threadID %d -- grabbing work \n", threadID);
+            // printf("threadID %d -- grabbing workID %d \n", threadID, workfound->bulk_taskID_);
             #endif
         }
             
@@ -381,15 +377,19 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
                         printf("Accessing Feeder Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, child);
                         #endif
                         if(bulk_task_launches[child]->num_deps == 0) {
+                            printf("Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
                             ready_task_q.push_back(bulk_task_launches[child]);
                         } else {
                             bulk_task_launches[child]->num_deps--;
+                            printf("Decrementing and Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
                             if(bulk_task_launches[child]->num_deps == 0) {
                                 ready_task_q.push_back(bulk_task_launches[child]);
                             }
 
                         }
                     }   
+
+
                     
                     // bulk_task_launches.erase(key);
                     wakeup_signal = true;
