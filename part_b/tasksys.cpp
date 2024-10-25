@@ -377,11 +377,11 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
                         printf("Accessing Feeder Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, child);
                         #endif
                         if(bulk_task_launches[child]->num_deps == 0) {
-                            printf("Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
+                            // printf("Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
                             ready_task_q.push_back(bulk_task_launches[child]);
                         } else {
                             bulk_task_launches[child]->num_deps--;
-                            printf("Decrementing and Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
+                            // printf("Decrementing and Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
                             if(bulk_task_launches[child]->num_deps == 0) {
                                 ready_task_q.push_back(bulk_task_launches[child]);
                             }
