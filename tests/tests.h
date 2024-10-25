@@ -60,33 +60,58 @@ typedef struct {
 /*
  * Implement your task here
 */
-class YourTask : public IRunnable {
+class calcParentNTask : public IRunnable {
     public:
-        YourTask() {}
-        ~YourTask() {}
-        void runTask(int task_id, int num_total_tasks) {}
+        int idx_;
+        int *output_;
+        calcParentNTask(int idx, int *output) : idx_(idx), output_(output) {}
+        ~calcParentNTask() {}
+
+        // very slow recursive implementation of the nth fibbonacci number
+        int calcParentN(int n) {
+            if (n==0) return 0;
+            return (n-1)/2;
+        }
+
+        void runTask(int task_id, int num_total_tasks) {
+            output_[task_id] = calcParentN(task_id);
+        }
 };
 /*
  * Implement your test here. Call this function from a wrapper that passes in
  * do_async and num_elements. See `simpleTest`, `simpleTestSync`, and
  * `simpleTestAsync` as an example.
  */
-TestResults yourTest(ITaskSystem* t, bool do_async, int num_elements, int num_bulk_task_launches) {
+TestResults calcParentNTest(ITaskSystem* t, bool do_async, int num_elements) {
     // TODO: initialize your input and output buffers
     int* output = new int[num_elements];
+    std::vector<calcParentNTask*> runnables(
+        num_elements);
 
-    // TODO: instantiate your bulk task launches
+    // for (int i=0; i<num_elements; i++){
+    //     runnables.push_back(calcParentNTask(i, output));
+    // }
 
     // Run the test
     double start_time = CycleTimer::currentSeconds();
-    if (do_async) {
-        // TODO:
         // initialize dependency vector
         // make calls to t->runAsyncWithDeps and push TaskID to dependency vector
-        // t->sync() at end
-    } else {
-        // TODO: make calls to t->run
-    }
+        for (int i=0; i < num_elements; i++){
+            if (do_async) {
+                std::vector<TaskID> deps;
+                for (int i=0; i<2; i++){
+                    if ((i-1)/2 >=0) {
+                        deps.push_back((i-1)/2);
+                        }
+                }
+                int taskId = t->runAsyncWithDeps(
+                    runnables[i], num_elements, deps);
+            } else {
+                t->run(
+                    runnables[i], num_elements);
+            }
+            t->sync();
+        }
     double end_time = CycleTimer::currentSeconds();
 
     // Correctness validation
@@ -94,11 +119,7 @@ TestResults yourTest(ITaskSystem* t, bool do_async, int num_elements, int num_bu
     results.passed = true;
 
     for (int i=0; i<num_elements; i++) {
-        int value = 0; // TODO: initialize value
-        for (int j=0; j<num_bulk_task_launches; j++) {
-            // TODO: update value as expected
-        }
-
+        int value = (i-2)/2;
         int expected = value;
         if (output[i] != expected) {
             results.passed = false;
@@ -111,6 +132,13 @@ TestResults yourTest(ITaskSystem* t, bool do_async, int num_elements, int num_bu
     delete [] output;
 
     return results;
+}
+TestResults calcParentNTestSync(ITaskSystem* t) {
+    return calcParentNTest(t, false,10);
+}
+
+TestResults calcParentNTestAsync(ITaskSystem* t) {
+    return calcParentNTest(t, true,10);
 }
 
 /*
