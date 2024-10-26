@@ -69,8 +69,6 @@ class Tasks {
     int next_task;
     int status_;
     int num_total_tasks_;
-    TaskID bulk_taskID_;
-    int num_deps;
     std::vector<TaskID> deps;
     Tasks();
     ~Tasks();
@@ -96,8 +94,6 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         volatile int num_threads_;
         std::thread* thread_pool_;
         std::unordered_map<int, Tasks*> bulk_task_launches;
-        std::unordered_map<int, std::vector<TaskID>> feeder;
-        std::vector<Tasks*> ready_task_q;
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();

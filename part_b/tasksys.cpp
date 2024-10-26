@@ -1,6 +1,5 @@
 #include "tasksys.h"
 
-// #define DEBUG
 
 IRunnable::~IRunnable() {}
 
@@ -194,9 +193,6 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // printf("threads have been joined");
     delete[] thread_pool_;
     delete tasks;
-    // for (auto it = bulk_task_launches.begin(); it != bulk_task_launches.end(); ) {
-    //     delete it->second;
-    // }
     // delete mutex_;
     // delete finishedMutex_;
 }
@@ -223,8 +219,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     //
     //increment total active runs 
     // printf("-> Call No : %d \n", num_runs_started);
-    bool allow_pushback = true;
-    int bulk_taskID = num_runs_started;
+    int taskID=num_runs_started;
     num_runs_started++;
     
     tasks = new Tasks();
@@ -235,54 +230,28 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     tasks->num_total_tasks_ = num_total_tasks;
     tasks->runnable_ = runnable;
     tasks->status_ = 0;
-    tasks->num_deps = deps.size();
     tasks->deps = deps;
-    tasks->bulk_taskID_ = bulk_taskID;
-    bulk_task_launches[bulk_taskID] = tasks;
-
-    for (auto& dep : deps) {
-        feeder[dep].push_back(bulk_taskID);
-        if(!bulk_task_launches[dep]->status_){
-            allow_pushback = false;
-        } else {
-            bulk_task_launches[bulk_taskID]->num_deps--;
-        }
-    }
-
-    if(deps.empty() || allow_pushback) {
-        ready_task_q.push_back(tasks);
-    }
+    bulk_task_launches[taskID] = tasks;
     #ifdef DEBUG
-    // printf("--- Initializing Ready Task Q --- \n");
-    // for (auto& pair: ready_task_q){
-    //     printf(" Ready Task Q : %d \n", pair->bulk_taskID_);
-    // }
-    // printf("--- Initializing Bulk Task Q --- \n");
-    // for (auto& pair: bulk_task_launches){
-    //     printf("taskID %d", bulk_taskID);
-    //     for (auto& dep_:pair.second->deps){
-    //         printf(" | dep %d", dep_);
-    //     }
-    //     printf("\n");
-    // }
-    // printf("--- Initializing Feeder Q --- \n");
-    // for (auto& pair: feeder){
-    //     printf("TaskID %d", pair.first);
-    //     for (auto& dep_: pair.second){
-    //         printf(" | Child %d", dep_);
-    //     }
-    //     printf("\n");
-    // }
+    for (auto& pair: bulk_task_launches){
+        printf("taskID %d", taskID);
+        for (auto& dep_:pair.second->deps){
+            printf(" | dep %d", dep_);
+        }
+        printf("\n");
+    }
     #endif
     wakeup_signal = true;
     workers.notify_all();
     
-    return bulk_taskID;
+    return taskID;
 }
 void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
+    int key;
     volatile int taskID;
     volatile int total;
     volatile bool work_not_found = true;
+    bool dependencynotMet = false;
     Tasks* workfound;
 
     #ifdef DEBUG
@@ -293,43 +262,35 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
     {   
         // printf("threadID %d looping for\n", threadID);
         std::unique_lock<std::mutex> lk(lk_);
-        // for (auto& pair: bulk_task_launches){
+        for (auto& pair: bulk_task_launches){
 
-        //     if (pair.second->status_==1) {
-        //         continue;
-        //     }
+            // printf("threadID %d looping\n", threadID);
+            if (pair.second->status_==1) {
+                continue;
+            }
             
-        //     dependencynotMet = false;
-        //     //check for any dependencies on the task to exec
-        //     for (auto& depend_:pair.second->deps){
-        //         // Use std::find to check if depend_ is in bulk_task_launches
-        //         auto it = bulk_task_launches.find(depend_);
-        //         if (it != bulk_task_launches.end()) {
-        //             if (! bulk_task_launches[depend_]->status_){ //status 0 means not ready,not finished,  1 is ready/finished
-        //                 dependencynotMet = true;
-        //                 break;
-        //             }
-        //         }
-        //     }
+            dependencynotMet = false;
+            //check for any dependencies on the task to exec
+            for (auto& depend_:pair.second->deps){
+                // Use std::find to check if depend_ is in bulk_task_launches
+                auto it = bulk_task_launches.find(depend_);
+                if (it != bulk_task_launches.end()) {
+                    if (! bulk_task_launches[depend_]->status_){ //status 0 means not ready,not finished,  1 is ready/finished
+                        dependencynotMet = true;
+                        break;
+                    }
+                }
+            }
 
-        //     if (dependencynotMet) {
-        //         continue;
-        //     } else {
-        //         work_not_found = false;
-        //         workfound = pair.second;
-        //         key = pair.first;
-        //         break;
-        //     }
-        //     work_not_found = true;
-        // }
-        if (ready_task_q.empty()) {
+            if (dependencynotMet) {
+                continue;
+            } else {
+                work_not_found = false;
+                workfound = pair.second;
+                key = pair.first;
+                break;
+            }
             work_not_found = true;
-        } else {
-            workfound = ready_task_q[0];
-            work_not_found = false;
-            #ifdef DEBUG
-            // printf("threadID %d -- grabbing workID %d \n", threadID, workfound->bulk_taskID_);
-            #endif
         }
             
         if (!work_not_found) {
@@ -370,28 +331,7 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
                     #endif
 
                     workfound->status_=1; //set status of finished task to 1 meaning ready
-                    ready_task_q.erase(ready_task_q.begin());
-
-                    for(auto& child : feeder[workfound->bulk_taskID_]){
-                        #ifdef DEBUG
-                        printf("Accessing Feeder Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, child);
-                        #endif
-                        if(bulk_task_launches[child]->num_deps == 0) {
-                            // printf("Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
-                            ready_task_q.push_back(bulk_task_launches[child]);
-                        } else {
-                            bulk_task_launches[child]->num_deps--;
-                            // printf("Decrementing and Pushing Work into Q | Key : %d , Value : %d \n", workfound->bulk_taskID_, bulk_task_launches[child]->num_deps);
-                            if(bulk_task_launches[child]->num_deps == 0) {
-                                ready_task_q.push_back(bulk_task_launches[child]);
-                            }
-
-                        }
-                    }   
-
-
-                    
-                    // bulk_task_launches.erase(key);
+                    bulk_task_launches.erase(key);
                     wakeup_signal = true;
                     workers.notify_all();
 
@@ -411,16 +351,11 @@ void TaskSystemParallelThreadPoolSleeping::sleepingThread(int threadID) {
             }
         } else {
             wakeup_signal = false;
-            #ifdef DEBUG
-            printf("threadID %d -- Sleeping \n", threadID);
-            #endif
+            // printf("threadID %d -- Sleeping \n", threadID);
             workers.wait(lk, [&]() {
-                // printf("Tried to wakeup %d | %d \n", killed_, wakeup_signal);
                 return killed_ || wakeup_signal;
             });
-            #ifdef DEBUG
-            printf("threadID %d -- Wakeup \n", threadID);
-            #endif
+            // printf("threadID %d -- Wakeup \n", threadID);
         }
         if(num_runs_finished == num_runs_started) {
             finished_.notify_all();
