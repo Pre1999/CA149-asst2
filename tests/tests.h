@@ -9,6 +9,7 @@
 
 #include "CycleTimer.h"
 #include "itasksys.h"
+#include <tuple>
 
 /*
 Sync tests
@@ -60,21 +61,23 @@ typedef struct {
 /*
  * Implement your task here
 */
-class calcParentNTask : public IRunnable {
+class calcChildrenTask : public IRunnable {
     public:
         int idx_;
         int *output_;
-        calcParentNTask(int idx, int *output) : idx_(idx), output_(output) {}
-        ~calcParentNTask() {}
+        calcChildrenTask(int idx, int *output) : idx_(idx), output_(output) {}
+        ~calcChildrenTask() {}
 
-        // very slow recursive implementation of the nth fibbonacci number
-        int calcParentN(int n) {
-            if (n==0) return 0;
-            return (n-1)/2;
+        // given a node N, this task calculates the two 
+        // children and places them in the correct location in array
+        void calcChildren(int parent, int *output) {
+            output_[2*parent] = parent*2+1;
+            output_[2*parent+1] = parent*2+2;
+
         }
 
         void runTask(int task_id, int num_total_tasks) {
-            output_[task_id] = calcParentN(task_id);
+            calcChildren(task_id, output_);
         }
 };
 /*
@@ -82,15 +85,16 @@ class calcParentNTask : public IRunnable {
  * do_async and num_elements. See `simpleTest`, `simpleTestSync`, and
  * `simpleTestAsync` as an example.
  */
-TestResults calcParentNTest(ITaskSystem* t, bool do_async, int num_elements) {
+TestResults calcChildrenTest(ITaskSystem* t, bool do_async, int num_elements) {
     // TODO: initialize your input and output buffers
-    int* output = new int[num_elements];
-    std::vector<calcParentNTask*> runnables(
-        num_elements);
+    int* output = new int[num_elements*2];
+    std::vector<calcChildrenTask*> runnables(num_elements);
 
-    // for (int i=0; i<num_elements; i++){
-    //     runnables.push_back(calcParentNTask(i, output));
-    // }
+    for (int i=0; i<num_elements; i++){
+        output[2*i]= 0;
+        output[2*i+1]= 0;
+        runnables[i] = new calcChildrenTask(i, output);
+    }
 
     // Run the test
     double start_time = CycleTimer::currentSeconds();
@@ -99,11 +103,10 @@ TestResults calcParentNTest(ITaskSystem* t, bool do_async, int num_elements) {
         for (int i=0; i < num_elements; i++){
             if (do_async) {
                 std::vector<TaskID> deps;
-                for (int i=0; i<2; i++){
-                    if ((i-1)/2 >=0) {
+                if (i > 0) {
                         deps.push_back((i-1)/2);
                         }
-                }
+                
                 int taskId = t->runAsyncWithDeps(
                     runnables[i], num_elements, deps);
             } else {
@@ -113,13 +116,12 @@ TestResults calcParentNTest(ITaskSystem* t, bool do_async, int num_elements) {
             t->sync();
         }
     double end_time = CycleTimer::currentSeconds();
-
     // Correctness validation
     TestResults results;
     results.passed = true;
 
     for (int i=0; i<num_elements; i++) {
-        int value = (i-2)/2;
+        int value = i+1;
         int expected = value;
         if (output[i] != expected) {
             results.passed = false;
@@ -133,12 +135,12 @@ TestResults calcParentNTest(ITaskSystem* t, bool do_async, int num_elements) {
 
     return results;
 }
-TestResults calcParentNTestSync(ITaskSystem* t) {
-    return calcParentNTest(t, false,10);
+TestResults calcChildrenTestSync(ITaskSystem* t) {
+    return calcChildrenTest(t, false,10);
 }
 
-TestResults calcParentNTestAsync(ITaskSystem* t) {
-    return calcParentNTest(t, true,10);
+TestResults calcChildrenTestAsync(ITaskSystem* t) {
+    return calcChildrenTest(t, true,10);
 }
 
 /*
